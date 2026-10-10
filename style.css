@@ -64,6 +64,7 @@ h2 { margin: 0; font-size: clamp(24px, 3vw, 32px); text-wrap: balance; }
 .founder h3 { margin: 0; font-size: 24px; }
 .founder p { margin: 6px 0 0; font-weight: 400; color: var(--muted); }
 .founder .who { margin-top: 2px; }
+.founder .bio { color: var(--ink); font-size: 17px; line-height: 1.55; margin-top: 12px; }
 
 .foot { display: flex; justify-content: space-between; gap: 6px 24px; flex-wrap: wrap; padding: 14px 22px; font-size: 13px; color: var(--muted); }
 

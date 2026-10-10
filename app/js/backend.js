@@ -770,7 +770,7 @@ async function askSpace(messages, token) {
   const data = await res.json().catch(() => ({}));
   if (res.ok && typeof data.reply === "string") return data.reply;
   const said = typeof data.detail === "string" ? data.detail : "";
-  if (res.status === 401) fail(401, "Please sign in again.");
+  if (res.status === 401) fail(503, said || "Grante's AI couldn't check your sign-in. Try signing out and back in.");   // not 401: that would sign you out
   if (res.status === 429) fail(429, said || "You're asking fast! Wait a moment and try again.");
   fail(503, said || "Grante's AI is waking up. Please try again in a minute.");
 }
@@ -845,7 +845,7 @@ async function askSpaceAgent(messages) {
   const data = await res.json().catch(() => ({}));
   if (res.ok && typeof data.reply === "string") return data.reply;
   const said = typeof data.detail === "string" ? data.detail : "";
-  if (res.status === 401) fail(401, "Please sign in again.");
+  if (res.status === 401) fail(503, said || "Grante's AI couldn't check your sign-in. Try signing out and back in.");   // not 401: that would sign you out
   if (res.status === 429) fail(429, said || "You're asking fast! Wait a moment and try again.");
   fail(503, said || "Grante's AI is waking up. Please try again in a minute.");
 }
