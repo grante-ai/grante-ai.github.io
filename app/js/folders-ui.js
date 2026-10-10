@@ -11,9 +11,9 @@ export function foldersCard({ title = "Folders Grante can use", intro, onChange,
   const quick = h("div", { class: "folder-quick" });
   const card = h("div", { class: "card form-stack folders-card" },
     h("h3", {}, title),
-    h("p", { class: "muted" }, intro || "Grante can only see and change files inside the folders you add here. Your browser will ask you to click Allow for each one."),
+    h("p", { class: "muted" }, intro || "Grante can only see and change files inside these folders. It asks for a folder when it needs one, or you can add some here. Chrome won't let websites have all of Downloads, Desktop, or Documents, so pick a folder inside one of them."),
     quick, list,
-    compact ? null : h("p", { class: "muted small" }, "Some folders, like your whole home folder or system folders, can't be added: your browser keeps them off-limits to all websites."));
+    compact ? null : h("p", { class: "muted small" }, "If Chrome says a folder has system files, open it and pick a folder inside it instead."));
 
   async function add(startIn) {
     try {
@@ -26,7 +26,7 @@ export function foldersCard({ title = "Folders Grante can use", intro, onChange,
     const have = FILES.folders();
     quick.replaceChildren(
       ...QUICK.filter(([, name]) => !have.some((f) => f.name.toLowerCase() === name.toLowerCase()))
-        .map(([key, name]) => h("button", { class: "btn btn-ghost", type: "button", onclick: () => add(key) }, icon("plus"), `Add ${name}`)),
+        .map(([key, name]) => h("button", { class: "btn btn-ghost", type: "button", onclick: () => add(key) }, icon("plus"), `Pick a folder in ${name}`)),
       h("button", { class: "btn btn-ghost", type: "button", onclick: () => add() }, icon("folder"), "Add another folder"));
     list.replaceChildren(...(have.length ? have.map((f) => h("div", { class: "folder-row" },
       h("span", { class: "folder-name" }, icon("folder"), f.name),

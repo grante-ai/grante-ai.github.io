@@ -80,6 +80,13 @@ async function fbHttp(method, url, body, token, form = false) {
     code = String(err.status || err.message || "");
     detail = String(err.message || "");
   } catch { detail = raw.slice(0, 200); }
+  if (/referr?er/i.test(detail) || /REFERRER_BLOCKED/.test(raw)) {   // the key is locked to other website addresses
+    throw new FirebaseError(`Your Firebase key isn't allowed on this website address (${location.origin}). In Google Cloud \u2192 Credentials, add ${location.origin}/* to the key's website list.`, "REFERER_BLOCKED", res.status);
+  }
+  if (/are blocked|API_KEY_SERVICE_BLOCKED|has not been used|is disabled/i.test(detail + raw)) {   // the key isn't allowed to use this Google service
+    const api = /identitytoolkit/.test(url) ? "Identity Toolkit API" : /securetoken/.test(url) ? "Token Service API" : "Cloud Firestore API";
+    throw new FirebaseError(`Your Firebase key isn't allowed to use the ${api}. In Google Cloud \u2192 Credentials, open the key and add it under API restrictions (or choose "Don't restrict key").`, "API_BLOCKED", res.status);
+  }
   let short = ((detail && (detail === detail.toUpperCase() || detail.includes(" : "))) ? detail : code).split(" : ")[0].trim();
   if (!(short in MESSAGES)) short = code;
   throw new FirebaseError(MESSAGES[short] || detail || `Firebase error ${res.status}`, short, res.status);
@@ -814,7 +821,8 @@ const askBefore = () => { try { return JSON.parse(localStorage.getItem(store("as
 function agentPrompt() {
   const names = files.shared();
   return "You are Grante, NarSan's assistant. You can manage files and folders in the folders the user shared with you"
-    + (names.length ? `: ${names.join(", ")}. Paths start with one of those folder names, like "${names[0]}/notes.txt"; a plain file name is searched for automatically. ` : ". ")
+    + (names.length ? `: ${names.join(", ")}. Paths start with one of those folder names, like "${names[0]}/notes.txt"; a plain file name is searched for automatically. `
+      : ". No folders are shared yet: call the tool anyway, and Grante will ask the user for the folder. ")
     + "When the user asks you to do something, call the right tool right away. Use file and folder names exactly as the user wrote them. "
     + "If the user says where (like Downloads or Desktop), always include that location in the tool call. "
     + "Never say you did something unless a tool result confirms it, and describe it exactly as the tool result says. "
@@ -845,7 +853,7 @@ async function askSpaceAgent(messages) {
 function agentSession(id) {
   if (id && agentSessions.has(id)) return agentSessions.get(id);
   const s = { id: newChatId(), messages: [{ role: "system", content: agentPrompt() }], queue: [], pending: null, choice: null,
-    actions: [], focus: null, requestId: null };
+    needFolder: null, asked: new Set(), actions: [], focus: null, requestId: null };
   agentSessions.set(s.id, s);
   return s;
 }
@@ -864,6 +872,7 @@ async function agentResponse(s, status, reply = null, error = null) {
   const body = { session_id: s.id, status, reply, actions: s.actions, tree: await files.tree(s.focus) };
   if (s.pending) body.approval = { tool: s.pending.name, arguments: s.pending.arguments, description: files.describe(s.pending.name, s.pending.arguments) };
   if (s.choice) body.choice = s.choice;
+  if (s.needFolder) body.need_folder = s.needFolder;
   if (error) body.error = error;
   return body;
 }
@@ -895,6 +904,9 @@ async function agentContinue(s) {
   for (;;) {
     while (s.queue.length) {
       const call = s.queue[0];
+      const said = [...s.messages].reverse().find((m) => m.role === "user")?.content || "";
+      const need = await files.missingFolder(call.name, call.arguments, said, s.asked);
+      if (need) { s.needFolder = need; return agentResponse(s, "needs_folder"); }
       const question = await files.checkAmbiguity(call.name, call.arguments);
       if (question) { s.choice = question; return agentResponse(s, "needs_choice"); }
       const blocked = files.READ_ONLY.has(call.name) ? null : await files.blockedReason(call.name, call.arguments);
@@ -931,12 +943,12 @@ async function agentSend(body) {
   requireVerified();
   if (!files.supported) fail(400, "Grante's file tools work in Chrome or Edge on a computer.");
   await files.whenReady();
-  if (!files.shared().length) fail(400, "Share a folder with Grante first. Click \"Add a folder\" above.");
   const message = (body.message || "").trim();
   if (message.length < 1 || message.length > 2000) fail(422, "Requests must be 1-2000 characters.");
   const s = agentSession(body.session_id);
   if (s.pending) return agentResponse(s, "needs_approval", null, "Please approve or decline the waiting action first.");
   if (s.choice) return agentResponse(s, "needs_choice", null, "Please pick one of the options first.");
+  if (s.needFolder) return agentResponse(s, "needs_folder", null, "Please choose the folder or press Cancel first.");
   s.actions = []; s.focus = null;
   s.requestId = newChatId();
   const list = readList("requests");
@@ -973,6 +985,24 @@ async function agentChoose(id, body) {
     s.messages.push({ role: "tool", content: "The user cancelled this action, so it was not done." });
   } else {
     call.arguments[choice.arg] = choice.options[index].path;   // now it's exact
+  }
+  return agentContinue(s);
+}
+
+/* The person chose a folder for Grante (or cancelled), so carry on. */
+async function agentFolder(id, body) {
+  requireVerified(); await files.whenReady();
+  const s = agentSessions.get(id);
+  if (!s || !s.needFolder) return s ? agentResponse(s, "done", null, "Grante isn't waiting for a folder.") : fail(404, "That task has ended. Start a new one.");
+  const need = s.needFolder;
+  s.needFolder = null;
+  s.asked.add(need.key);   // don't ask about the same folder twice in one task
+  if (!body.granted) {
+    const call = s.queue.shift();
+    s.actions.push({ action: files.describe(call.name, call.arguments), success: false, result: "Cancelled: no folder was shared." });
+    s.messages.push({ role: "tool", content: "The user didn't share that folder, so nothing was done." });
+    s.queue = [];
+    return agentFinish(s, "Okay, I left it. Ask again any time.");
   }
   return agentContinue(s);
 }
@@ -1063,6 +1093,7 @@ export async function handle(method, path, body = {}) {
   if (seg[0] === "agent" && seg.length === 3 && method === "POST") {
     if (seg[2] === "decision") return agentDecide(seg[1], body);
     if (seg[2] === "choice") return agentChoose(seg[1], body);
+    if (seg[2] === "folder") return agentFolder(seg[1], body);
   }
   if (is("GET", "/files/tree")) { requireVerified(); await files.whenReady(); return { workspace: "Your folders", tree: await files.tree() }; }
   if (is("GET", "/home")) {

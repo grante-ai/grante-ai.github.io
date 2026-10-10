@@ -1,9 +1,9 @@
 /* Home screen and the Grante agent (the part that does things with your files). */
 import { api, FILES, WEB } from "./api.js";
-import { foldersCard, permissionStrip } from "./folders-ui.js";
+import { permissionStrip } from "./folders-ui.js";
 import { USES } from "./content.js";
 import { app } from "./state.js";
-import { formatDate, h, icon, markdown, thinking } from "./ui.js";
+import { formatDate, h, icon, markdown, thinking, toast } from "./ui.js";
 
 export const KIND_TAGS = {
   move_file: "Moved", rename_file: "Renamed", create_folder: "New folder",
@@ -148,6 +148,31 @@ function askApproval(approval) {
   });
 }
 
+/* Website only: Grante needs a folder it hasn't been given yet. The browser only opens its
+   folder window after a click, so this shows a button. */
+function askFolder(need) {
+  return new Promise((resolve) => {
+    const pick = h("button", { class: "btn" }, icon("folder"), need.folder ? `Choose ${need.folder}` : "Choose a folder");
+    const cancel = h("button", { class: "btn btn-ghost" }, "Cancel");
+    const buttons = h("div", { class: "buttons" }, pick, cancel);
+    const hint = h("p", { class: "muted small" }, need.place
+      ? `A window opens in ${need.place}. Click ${need.folder ? `the ${need.folder} folder` : "a folder"}, then Select, then Allow.`
+      : `A window opens. Find ${need.folder ? `the ${need.folder} folder` : "the folder"}, click it, then Select, then Allow.`);
+    bubble("grante", h("div", {},
+      h("div", { class: "approval-head" }, icon("folder"), "Grante needs a folder"),
+      h("p", { class: "approval-q" }, need.message), hint, buttons), "approval");
+    const done = (granted, label) => { buttons.replaceWith(h("p", { class: "muted small" }, label)); hint.remove(); resolve(granted); };
+    pick.addEventListener("click", async () => {
+      try {
+        const r = await FILES.addFolder(need.start_in);
+        if (r) done(true, r.already ? `${r.name} was already shared.` : `You shared ${r.name}.`);
+      } catch (e) { toast(e.message, "bad"); }
+    });
+    cancel.addEventListener("click", () => done(false, "You cancelled this."));
+    pick.focus();
+  });
+}
+
 /* "Which one did you mean?" Two buttons (or more), each with an icon, the name, where it is, and what's inside. */
 function askChoice(choice) {
   return new Promise((resolve) => {
@@ -191,12 +216,16 @@ async function send(text, form) {
     let r = await api("/agent", { method: "POST", body: { message: text, session_id: app.agentSession } });
     app.agentSession = r.session_id;
     let shown = 0, changed = false;
-    while (r.status === "needs_approval" || r.status === "needs_choice") {
+    while (r.status === "needs_approval" || r.status === "needs_choice" || r.status === "needs_folder") {
       wait.remove();
       changed ||= r.actions.some((a) => a.success);
       resultBubble({ ...r, reply: null }, shown, false);
       shown = r.actions.length;
-      if (r.status === "needs_choice") {
+      if (r.status === "needs_folder") {
+        const granted = await askFolder(r.need_folder);
+        wait = bubble("grante", thinking());
+        r = await api(`/agent/${app.agentSession}/folder`, { method: "POST", body: { granted } });
+      } else if (r.status === "needs_choice") {
         const index = await askChoice(r.choice);
         wait = bubble("grante", thinking());
         r = await api(`/agent/${app.agentSession}/choice`, { method: "POST", body: { index } });
@@ -260,19 +289,6 @@ export function renderAgent(view) {
       h("p", { class: "muted" }, "This browser doesn't let websites work with your folders. Open Grante in Chrome or Edge on a Windows, Mac, Linux, or Chromebook computer to sort and move your files. Chat and the forum work here."),
       h("div", { class: "chips" }, h("a", { class: "btn", href: "#/chat" }, "Ask Grante AI"), h("a", { class: "btn btn-ghost", href: "#/forum" }, "Open the forum")))));
   }
-  if (WEB && !FILES.folders().length) {   // first time: choose folders before anything else
-    return FILES.whenReady().then(() => {
-      if (FILES.folders().length) return renderAgent(view);
-      view.replaceChildren(h("div", { class: "narrow" },
-        h("div", { class: "card page-head" }, h("div", {}, h("h2", {}, "Let's set up your folders"),
-          h("p", { class: "muted" }, "Pick the folders Grante can work in. It takes about 30 seconds, and you can change it any time in Account Settings."))),
-        foldersCard({ title: "Choose folders", onChange: () => { if (FILES.folders().length) setReady(); } }),
-        h("div", { class: "card row-between", id: "folders-done", hidden: true },
-          h("span", {}, "All set? You can add more later."),
-          h("button", { class: "btn", type: "button", onclick: () => renderAgent(view) }, "Start using Grante"))));
-      const setReady = () => { view.querySelector("#folders-done").hidden = false; };
-    });
-  }
   if (!thread) thread = h("div", { class: "thread" }, welcomeCard());
   const input = h("input", { type: "text", autocomplete: "off", placeholder: "Tell Grante what to do…", "aria-label": "Tell Grante what to do" });
   const form = h("form", { class: "card composer" }, input, h("button", { class: "btn", type: "submit" }, "Send"));
@@ -292,7 +308,8 @@ export function renderAgent(view) {
     WEB ? permissionStrip() : null,
     thread,
     h("div", { class: "composer-wrap" }, form,
-      h("p", { class: "fine-print" }, WEB ? `Grante works in: ${FILES.folders().map((f) => f.name).join(", ")}. Deleted files go to a "Grante Trash" folder. Replies can take a minute.`
+      h("p", { class: "fine-print" }, WEB ? (FILES.folders().length ? `Grante works in: ${FILES.folders().map((f) => f.name).join(", ")}. ` : "Grante will ask for a folder when it needs one. ")
+          + `Deleted files go to a "Grante Trash" folder. Replies can take a minute.`
         : "Grante can make mistakes. Deleted files go to your Trash."))));
   if (app.pendingAgentMessage) {
     const text = app.pendingAgentMessage;

@@ -89,7 +89,7 @@ async function load(accountId) {
 export const folders = () => roots.map((r) => ({ id: r.id, name: r.name }));
 export const keepOutList = () => [...keepOut];
 
-/* Ask the person to choose a folder. startIn: "downloads", "desktop", "documents", or undefined. */
+/* Ask the person to choose a folder. startIn: "downloads", "desktop", "documents", "pictures", "music", "videos", or undefined. */
 export async function addFolder(startIn) {
   if (!supported) throw new ToolError("Choosing folders works in Chrome or Edge on a computer.");
   let handle;
@@ -101,7 +101,7 @@ export async function addFolder(startIn) {
       handle = await window.showDirectoryPicker({ id: `grante-${startIn || "other"}`, mode: "readwrite", ...(startIn ? { startIn } : {}) });
     } catch (e) {
       if (e && e.name === "AbortError") return null;   // they closed the picker
-      throw new ToolError("That folder can't be used. Your browser keeps some folders (like your whole home folder or system folders) off-limits to websites. Try a folder inside it, like Downloads or Documents.");
+      throw new ToolError("That folder can't be used. Your browser keeps some folders (like your whole home folder or system folders) off-limits to websites. Open it and pick a folder inside it instead.");
     }
     if ((await handle.requestPermission({ mode: "readwrite" })) !== "granted") {
       throw new ToolError("Grante needs your OK to change files in that folder. Try again and click Allow.");
@@ -172,7 +172,17 @@ export async function folderSuggestions(limit = 300) {
 /* ---------------------------------------------------------------------------------------
    Paths
    --------------------------------------------------------------------------------------- */
-const clean = (p) => String(p ?? "").trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\/|\/$/g, "");
+const cleanRaw = (p) => String(p ?? "").trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\/|\/$/g, "");
+/* The usual places on a computer. Chrome never lets a website have one of these whole, only folders inside them. */
+const PLACES = { downloads: ["Downloads", "downloads"], desktop: ["Desktop", "desktop"], documents: ["Documents", "documents"],
+  pictures: ["Pictures", "pictures"], music: ["Music", "music"], movies: ["Movies", "videos"], videos: ["Videos", "videos"] };
+const placeOf = (word) => PLACES[String(word || "").toLowerCase()] || null;
+const isRootName = (word) => roots.some((r) => r.name.toLowerCase() === String(word || "").toLowerCase());
+/* "Desktop/Projects/a.txt" becomes "Projects/a.txt" when Projects was shared but Desktop itself can't be. */
+const clean = (p) => {
+  const c = cleanRaw(p), parts = c.split("/");
+  return parts.length > 1 && placeOf(parts[0]) && !isRootName(parts[0]) ? parts.slice(1).join("/") : c;
+};
 const isTop = (p) => ["", "."].includes(clean(p));
 const hidden = (name) => name.startsWith(".");
 const parentOf = (path) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
@@ -180,7 +190,7 @@ const rootFor = (path) => roots.find((r) => r.name.toLowerCase() === clean(path)
 const where = () => roots.map((r) => r.name).join(", ");
 
 function noFolders() {
-  if (!roots.length) throw new ToolError("You haven't shared any folders with Grante yet. Add one in the Grante Agent page or in Account Settings.");
+  if (!roots.length) throw new ToolError("Grante doesn't have any folders yet. Tell it which folder to use, like \"Sort my Projects folder\", or add one in Account Settings.");
 }
 
 /* The entry at an exact path ("Downloads/School"), or null. */
@@ -504,6 +514,68 @@ export async function blockedReason(name, a = {}) {
     if ((name === "sort_files") && !isTop(a.folder ?? "")) { const e = rootFor(a.folder) ? await resolve(a.folder) : await findExisting(a.folder); if (e && isKeptOut(e.path)) return "kept out"; }
   } catch (e) {
     if (e instanceof ToolError && !(e instanceof Ambiguous)) return e.message;   // not found, kept out, etc.: no point asking for an OK
+  }
+  return null;
+}
+
+/* ---------------------------------------------------------------------------------------
+   Asking for a folder only when it's needed
+   --------------------------------------------------------------------------------------- */
+const FOLDER_ARGS = { list_files: ["folder"], sort_files: ["folder"], create_folder: ["inside"], move_file: ["source", "destination_folder"],
+  rename_file: ["source"], delete_file: ["name"], find_file: [] };
+const MUST_EXIST = new Set(["list_files.folder", "sort_files.folder", "move_file.source", "rename_file.source", "delete_file.name"]);
+const IS_FOLDER = new Set(["list_files.folder", "sort_files.folder", "create_folder.inside", "move_file.destination_folder"]);
+
+/* If this action needs a folder Grante hasn't been given yet, what to ask for. Otherwise null.
+   said = the person's request (to guess where the folder is), skip = keys already asked about. */
+export async function missingFolder(name, args = {}, said = "", skip = new Set()) {
+  if (!FOLDER_ARGS[name]) return null;
+  const mentioned = Object.keys(PLACES).find((k) => new RegExp(`\\b${k}\\b`, "i").test(said));
+  const guess = mentioned ? PLACES[mentioned] : null;
+  const ask = (key, info) => (skip.has(key) ? null : { key, ...info });
+  if (name === "find_file" && !roots.length) {
+    return ask("any", { folder: null, place: guess?.[0] || null, start_in: guess?.[1] || "desktop",
+      message: "Grante doesn't have any folders yet. Pick the folder it should search in." });
+  }
+  for (const arg of FOLDER_ARGS[name]) {
+    const value = args[arg];
+    if (value === undefined || value === null || isTop(value)) {
+      if (!roots.length && (name === "sort_files" || name === "list_files" || name === "create_folder")) {
+        return ask("any", { folder: null, place: guess?.[0] || null, start_in: guess?.[1] || "desktop",
+          message: "Which folder should Grante use? Pick one and it'll carry on." });
+      }
+      continue;
+    }
+    const id = `${name}.${arg}`;
+    const parts = cleanRaw(value).split("/");
+    if (isRootName(parts[0])) continue;                       // already shared
+    const place = placeOf(parts[0]);
+    if (place) {
+      const rest = parts.slice(1);
+      if (rest.length && isRootName(rest[0])) continue;       // "Desktop/Projects" and Projects is shared
+      if (!rest.length || (rest.length === 1 && !IS_FOLDER.has(id))) {
+        // The whole Desktop (or a loose file right in it): Chrome won't allow that
+        return ask(`whole:${place[0]}`, { folder: null, place: place[0], start_in: place[1],
+          message: `Chrome doesn't let websites use your whole ${place[0]} folder. Pick a folder inside ${place[0]} for Grante to use.`
+            + (rest.length ? ` If '${rest[0]}' is loose in ${place[0]}, move it into a folder first.` : "") });
+      }
+      const folder = rest[0];
+      return ask(`folder:${folder.toLowerCase()}`, { folder, place: place[0], start_in: place[1],
+        message: `Grante needs your permission to use the '${folder}' folder in ${place[0]}.` });
+    }
+    if (!MUST_EXIST.has(id) && roots.length) continue;        // a place to put things: it can be created
+    let found = false;
+    if (roots.length) {
+      try { await findExisting(value); found = true; }
+      catch (e) { found = e instanceof Ambiguous || !(e instanceof ToolError) || !/couldn't find/.test(e.message); }
+    }
+    if (found) continue;
+    const folder = IS_FOLDER.has(id) || parts.length > 1 ? parts[0] : null;
+    return ask(folder ? `folder:${folder.toLowerCase()}` : `item:${String(value).toLowerCase()}`, { folder, place: guess?.[0] || null,
+      start_in: guess?.[1] || "desktop",
+      message: folder ? `Grante needs your permission to use the '${folder}' folder.`
+        : roots.length ? `I can't find '${value}' in the folders you've shared. Give Grante the folder it's in.`
+          : `Give Grante the folder that '${value}' is in.` });
   }
   return null;
 }
