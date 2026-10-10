@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grante by NarSan</title>
+<meta name="description" content="Grante is an AI assistant by NarSan that sorts your files, answers questions, and connects you with your town.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2l12 7v14l-12 7-12-7V9z' fill='%239d00ff'/%3E%3Cpath d='M16 9l6 3.5v7L16 23l-6-3.5v-7z' fill='white'/%3E%3C/svg%3E">
+<script src="gate.js"></script>
+<link rel="stylesheet" href="style.css">
+<script src="open.js" defer></script>
+</head>
+<body>
+
+<header class="top box">
+  <a class="brand" href="#top" aria-label="Grante home">
+    <svg viewBox="0 0 32 32" width="34" height="34" aria-hidden="true"><path d="M16 2l12 7v14l-12 7-12-7V9z" fill="#9d00ff"/><path d="M16 9l6 3.5v7L16 23l-6-3.5v-7z" fill="#fff"/></svg>
+    <span><strong>Grante</strong><small>by NarSan</small></span>
+  </a>
+  <nav aria-label="Sections">
+    <a href="#ask">What it does</a>
+    <a href="#start">First time</a>
+    <a href="#trust">Good to know</a>
+    <a href="#about">About us</a>
+    <a href="#" data-sign-out>Sign out</a>
+    <a class="btn small open-grante" href="app/">Open Grante</a>
+  </nav>
+</header>
+
+<main id="top">
+
+  <section class="hero">
+    <div class="hero-words">
+      <p class="kicker">You're signed in</p>
+      <h1>Welcome, <span data-first-name>there</span>! Grante is ready.</h1>
+      <p class="lead">Ask Grante to sort your Downloads, find a file you lost, or explain something. Then say hi in your town's forum.</p>
+      <p class="actions">
+        <a class="btn big open-grante" href="app/">Open Grante</a>
+      </p>
+      <p class="status"><span class="dot"></span>File tools work in Chrome or Edge on a computer. Chat and the forum work everywhere.</p>
+    </div>
+    <figure class="shot box">
+      <img src="img/home.jpg" width="1280" height="800" alt="Grante's home screen: a greeting, a box to type what you want, and ideas for what to ask.">
+    </figure>
+  </section>
+
+  <section id="ask">
+    <h2>What you can do with Grante</h2>
+    <p class="sub">Type what you want in plain words.</p>
+    <div class="cards">
+      <article class="box card"><h3>Clean up a messy folder</h3><p>Turn a Downloads or Desktop full of loose files into tidy folders with one sentence.</p><p class="try">“Sort my Downloads”</p></article>
+      <article class="box card"><h3>Find and move files</h3><p>Ask where something is, or say where it should go, and skip the dragging.</p><p class="try">“Move report.pdf to School”</p></article>
+      <article class="box card"><h3>Ask it anything</h3><p>Get things explained, brainstorm ideas, or make a study plan. It can be wrong, so check important facts.</p><p class="try">Ask Grante AI</p></article>
+      <article class="box card"><h3>Talk with your town</h3><p>A forum for your town, one for your country, and one for everyone.</p><p class="try">The forum</p></article>
+    </div>
+  </section>
+
+  <section id="start">
+    <h2>Your first time</h2>
+    <p class="sub">About a minute of setup, then you're going.</p>
+    <div class="get box">
+      <div class="get-main">
+        <a class="btn big open-grante" href="app/">Open Grante</a>
+        <p class="needs-note">For the file tools, use Chrome or Edge on a Windows, Mac, Linux, or Chromebook computer.</p>
+      </div>
+      <ol class="steps">
+        <li><strong>Click Open Grante.</strong> It opens in its own window.</li>
+        <li><strong>Choose your folders.</strong> Click <em>Add Downloads</em>, <em>Add Desktop</em>, or <em>Add Documents</em>. Your browser opens that folder: click <em>Select</em>, then <em>Allow</em>.</li>
+        <li><strong>Keep anything private out.</strong> In Account Settings, add folders to <em>Keep Grante out</em>, and Grante won't see or touch them.</li>
+        <li><strong>Ask away.</strong> Try “Sort my Downloads”. Grante asks before deleting anything.</li>
+      </ol>
+    </div>
+    <p class="honest box"><strong>Want it to feel like an app?</strong> In Chrome, open Grante, click the three dots at the top right, then <em>Cast, save, and share → Install page as app</em>. In Safari on a Mac, choose <em>File → Add to Dock</em>. Grante then gets its own icon.</p>
+  </section>
+
+  <section id="trust">
+    <h2>Good to know</h2>
+    <p class="sub">How Grante treats your files and your information.</p>
+    <div class="cards three">
+      <article class="box card"><h3>Only the folders you choose</h3><p>Grante can't see anything else on your computer, and you can remove a folder any time.</p></article>
+      <article class="box card"><h3>Nothing is lost by accident</h3><p>Deleted files go to a “Grante Trash” folder you can open anytime. Grante never overwrites a file.</p></article>
+      <article class="box card"><h3>It asks first</h3><p>By default Grante waits for your OK before deleting. You choose which actions need your OK.</p></article>
+      <article class="box card"><h3>Your files stay on your computer</h3><p>To decide what to do, Grante's AI sees file and folder names, never what's inside your files.</p></article>
+      <article class="box card"><h3>Your email stays private</h3><p>In the forum, people see your name and username, never your email.</p></article>
+      <article class="box card"><h3>Your history stays here</h3><p>Chats and your Archive are saved in this browser on this device.</p></article>
+    </div>
+    <p class="honest box"><strong>The honest part:</strong> Grante is an AI, and AI makes mistakes. It can pick the wrong file, so keep a backup of anything important. Answers can take up to a minute, and the first one after a quiet spell takes longer while the AI wakes up. Opening apps only works in the Mac app.</p>
+  </section>
+
+  <section id="about">
+    <h2>About us</h2>
+    <div class="box founder">
+      <div class="face" aria-hidden="true">TB</div>
+      <div>
+        <h3>Hi, it’s Tango!</h3>
+        <p class="who">Tango Bhat · Founder, NarSan</p>
+        <p>NarSan is a new company building helpful, trustworthy AI. Grante is its first product.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot box">
+  <span>© 2026 NarSan. All rights reserved.</span>
+  <span><a href="app/#/terms">Terms</a> · <a href="app/#/privacy">Privacy</a></span>
+</footer>
+
+</body>
+</html>
