@@ -17,5 +17,5 @@ export const CONFIG = {
   },
   // The address of your Hugging Face Space that runs Grante's AI, like
   // "https://your-name-grante-ai.hf.space"  (no slash at the end)
-  spaceUrl: "PUT-YOUR-SPACE-ADDRESS-HERE",
+  spaceUrl: "https://tango301-grante-ai.hf.space",
 };
