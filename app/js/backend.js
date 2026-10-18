@@ -756,6 +756,47 @@ function saveChats(uid, chats) {
 }
 const newChatId = () => [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
+/* Like askSpace, but shows the reply as it's written: onText(textSoFar) runs as words arrive.
+   Falls back to the all-at-once way if the Space is an older version without /chat/stream. */
+async function askSpaceStreaming(messages, token, onText) {
+  if (!/^https?:\/\//.test(SPACE)) fail(503, "Grante's AI isn't connected to the website yet.");
+  const stop = new AbortController();
+  let timer = setTimeout(() => stop.abort(), 240000);
+  let res;
+  try {
+    res = await fetch(via(`${SPACE}/chat/stream`), { method: "POST", signal: stop.signal,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ messages }) });
+  } catch {
+    clearTimeout(timer);
+    fail(503, "Grante's AI isn't answering right now. If nobody has used it for a while it goes to sleep and takes a minute or two to wake up, so please try again shortly.");
+  }
+  if (res.status === 404 || res.status === 405) { clearTimeout(timer); return askSpace(messages, token); }   // older Space
+  if (!res.ok || !res.body) {
+    clearTimeout(timer);
+    const data = await res.json().catch(() => ({}));
+    const said = typeof data.detail === "string" ? data.detail : "";
+    if (res.status === 401) fail(503, said || "Grante's AI couldn't check your sign-in. Try signing out and back in.");
+    if (res.status === 429) fail(429, said || "You're asking fast! Wait a moment and try again.");
+    fail(503, said || "Grante's AI is waking up. Please try again in a minute.");
+  }
+  const reader = res.body.getReader(), decoder = new TextDecoder();
+  let text = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+      onText(text);
+      clearTimeout(timer); timer = setTimeout(() => stop.abort(), 120000);   // still writing: keep waiting
+    }
+  } catch {
+    if (!text.trim()) fail(503, "Grante's AI stopped answering. Please try again.");
+  } finally { clearTimeout(timer); }
+  text += decoder.decode();
+  if (!text.trim()) fail(503, "Grante's AI didn't write anything. Please try again.");
+  return text;
+}
+
 async function askSpace(messages, token) {
   if (!/^https?:\/\//.test(SPACE)) fail(503, "Grante's AI isn't connected to the website yet.");
   const stop = new AbortController();
@@ -784,7 +825,9 @@ async function chat(body) {
   const id = saved ? saved.id : newChatId();
   const messages = saved ? saved.messages : [];
   messages.push({ role: "user", content: message });
-  const reply = (await askSpace(messages.slice(-12), await idToken())).trim();
+  const reply = (typeof body.onText === "function"
+    ? await askSpaceStreaming(messages.slice(-12), await idToken(), body.onText)
+    : await askSpace(messages.slice(-12), await idToken())).trim();
   messages.push({ role: "assistant", content: reply });
   const again = loadChats(user.uid);   // re-read, in case another tab saved something meanwhile
   again[id] = { id, kind: "chat", title: saved ? saved.title : message.slice(0, 60), updated: now(), messages };
@@ -906,6 +949,12 @@ async function agentContinue(s) {
       const call = s.queue[0];
       const said = [...s.messages].reverse().find((m) => m.role === "user")?.content || "";
       const need = await files.missingFolder(call.name, call.arguments, said, s.asked);
+      if (need?.cannot) {   // nothing to pick that would help: explain and stop
+        s.queue = [];
+        s.actions.push({ action: files.describe(call.name, call.arguments), success: false, result: "Couldn't reach that file." });
+        s.messages.push({ role: "tool", content: need.message });
+        return agentFinish(s, need.message);
+      }
       if (need) { s.needFolder = need; return agentResponse(s, "needs_folder"); }
       const question = await files.checkAmbiguity(call.name, call.arguments);
       if (question) { s.choice = question; return agentResponse(s, "needs_choice"); }
@@ -949,7 +998,7 @@ async function agentSend(body) {
   if (s.pending) return agentResponse(s, "needs_approval", null, "Please approve or decline the waiting action first.");
   if (s.choice) return agentResponse(s, "needs_choice", null, "Please pick one of the options first.");
   if (s.needFolder) return agentResponse(s, "needs_folder", null, "Please choose the folder or press Cancel first.");
-  s.actions = []; s.focus = null;
+  s.actions = []; s.focus = null; s.asked = new Set();
   s.requestId = newChatId();
   const list = readList("requests");
   list.unshift({ id: s.requestId, session_id: s.id, time: now(), text: message, status: "working", actions: [], reply: null });
@@ -1003,6 +1052,10 @@ async function agentFolder(id, body) {
     s.messages.push({ role: "tool", content: "The user didn't share that folder, so nothing was done." });
     s.queue = [];
     return agentFinish(s, "Okay, I left it. Ask again any time.");
+  }
+  if (need.whole && body.name && s.queue[0]) {   // "Downloads" -> the folder inside Downloads they just picked
+    files.setAlias(need.place, body.name);         // and from now on, "Downloads" means that folder
+    s.queue[0].arguments[need.arg] = [body.name, ...(need.rest || [])].join("/");
   }
   return agentContinue(s);
 }

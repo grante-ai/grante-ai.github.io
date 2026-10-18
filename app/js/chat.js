@@ -14,6 +14,29 @@ let chats = [];
 let search = "";
 let menuListener = false;
 
+/* Shows Grante's reply word by word as it arrives, each word softly fading in. The AI sends words
+   in bursts; this lets them out at a steady pace (faster when it falls behind) so it reads smoothly. */
+function typewriter(dots, onGrow) {
+  let target = "", ended = false, used = 0, box = null, timer = null, done = null;
+  const pieces = () => target.slice(used).match(/\s*\S+\s*/g) || [];
+  const tick = () => {
+    let ready = pieces();
+    if (!ended && ready.length && !/\s$/.test(ready[ready.length - 1])) ready = ready.slice(0, -1);   // wait for the word to finish
+    if (!ready.length) { timer = null; if (ended && done) { setTimeout(done, 450); done = null; } return; }   // let the last words finish fading
+    if (!box) { box = h("div", { class: "prose typing" }); dots.replaceWith(box); }
+    const n = Math.max(1, Math.ceil(ready.length / 6));
+    for (const piece of ready.slice(0, n)) { box.append(h("span", { class: "word-in" }, piece)); used += piece.length; }
+    onGrow();
+    timer = setTimeout(tick, 45);
+  };
+  const kick = () => { if (!timer) timer = setTimeout(tick, 0); };
+  return {
+    update(text) { target = text.replace(/^\s+/, ""); kick(); },
+    finish() { ended = true; return new Promise((resolve) => { done = resolve; kick(); }); },
+    stop() { clearTimeout(timer); timer = null; },
+  };
+}
+
 export async function renderChat(view) {
   const list = h("div", { class: "chat-list", role: "list" });
   const thread = h("div", { class: "thread" });
@@ -121,16 +144,22 @@ export async function renderChat(view) {
     textarea.value = ""; grow();
     if (thread.querySelector(".chat-empty")) thread.replaceChildren();
     message("user", text);
-    const wait = h("div", { class: "card msg grante" }, h("div", { class: "who" }, "Grante"), thinking());
+    const dots = thinking();
+    const wait = h("div", { class: "card msg grante" }, h("div", { class: "who" }, "Grante"), dots);
     thread.append(wait);
     thread.scrollTop = thread.scrollHeight;
     app.busy = true; sendBtn.disabled = true;
+    const typing = typewriter(dots, () => {   // keep the newest words in view, unless you scrolled up to read
+      if (thread.scrollHeight - thread.scrollTop - thread.clientHeight < 120) thread.scrollTop = thread.scrollHeight;
+    });
     try {
-      const r = await api("/chat", { method: "POST", body: { message: text, chat_id: app.chatId } });
+      const r = await api("/chat", { method: "POST", body: { message: text, chat_id: app.chatId, onText: typing.update } });
+      await typing.finish();
       wait.remove();
       message("assistant", r.reply);
       if (r.chat_id !== app.chatId) { app.chatId = r.chat_id; loadList(); }
     } catch (err) {
+      typing.stop();
       wait.remove();
       thread.append(h("div", { class: "card msg grante" }, h("div", { class: "who" }, "Grante"), h("p", { class: "error" }, err.message)));
     } finally {

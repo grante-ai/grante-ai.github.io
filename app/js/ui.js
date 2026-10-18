@@ -219,3 +219,26 @@ export function passwordMeter(input, getContext = () => ({})) {
   update();
   return { node: h("div", { class: "pw-help" }, h("div", { class: "meter" }, bar), word, list), isValid: update };
 }
+
+/* Makes the words in an element fade in one after another, like Grante is saying them. */
+export function fadeInWords(el, { step = 35, max = 1400 } = {}) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return el;
+  const texts = [];
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  while (walk.nextNode()) if (walk.currentNode.nodeValue.trim()) texts.push(walk.currentNode);
+  const words = texts.reduce((n, t) => n + (t.nodeValue.match(/\S+/g) || []).length, 0);
+  const gap = Math.min(step, max / Math.max(1, words));
+  let i = 0;
+  for (const t of texts) {
+    const frag = document.createDocumentFragment();
+    for (const part of t.nodeValue.split(/(\s+)/)) {
+      if (!part) continue;
+      if (/^\s+$/.test(part)) { frag.append(part); continue; }
+      const span = document.createElement("span");
+      span.className = "word-in"; span.textContent = part; span.style.animationDelay = `${Math.round(i++ * gap)}ms`;
+      frag.append(span);
+    }
+    t.replaceWith(frag);
+  }
+  return el;
+}

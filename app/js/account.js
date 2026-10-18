@@ -1,6 +1,7 @@
 /* Account Settings, Archive, Safety, Help, and About pages. */
 import { api, FILES, WEB } from "./api.js";
 import { foldersCard, keepOutCard } from "./folders-ui.js";
+import { helperSettingsCard } from "./helper-ui.js";
 import { CAN_DO, FOUNDER, RISKS, TAGLINE, TRUST, USES, WEB_NOTE } from "./content.js";
 import { locationFields, nameFields } from "./places.js";
 import { app } from "./state.js";
@@ -169,7 +170,7 @@ export async function renderSettings(view, onUserChange, onSignedOut) {
 
   view.replaceChildren(h("div", { class: "narrow" }, pageHead("Account Settings", "Manage your profile, security, and what Grante is allowed to do."),
     profile, emailCard, location_, pwForm,
-    ...(WEB && FILES.supported ? [foldersCard(), keepOutCard()] : []),
+    ...(WEB && FILES.supported ? [...(FILES.onMac ? [helperSettingsCard()] : []), foldersCard(), keepOutCard()] : []),
     WEB && !FILES.supported ? null : perms, danger));
 }
 

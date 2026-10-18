@@ -82,11 +82,17 @@ async function load(accountId) {
   roots = [];
   try { keepOut = JSON.parse(localStorage.getItem(keepKey())) || []; } catch { keepOut = []; }
   if (!supported || !uid) return;
-  try { roots = (await dbAll()).filter((r) => r.uid === uid).sort((a, b) => a.added - b.added); }
-  catch { roots = []; }
+  let picked = [];
+  try { picked = (await dbAll()).filter((r) => r.uid === uid).sort((a, b) => a.added - b.added); }
+  catch { picked = []; }
+  const fromHelper = await helperRoots();
+  // Folders through Grante Helper come first; a picked folder with the same name steps aside.
+  roots = [...fromHelper, ...picked.filter((r) => !fromHelper.some((h) => h.name.toLowerCase() === r.name.toLowerCase()))];
 }
+/* Load again (after Grante Helper is set up or its folders change). */
+export function refresh() { loading = load(uid); return loading; }
 
-export const folders = () => roots.map((r) => ({ id: r.id, name: r.name }));
+export const folders = () => roots.map((r) => ({ id: r.id, name: r.name, helper: !!r.helper }));
 export const keepOutList = () => [...keepOut];
 
 /* Ask the person to choose a folder. startIn: "downloads", "desktop", "documents", "pictures", "music", "videos", or undefined. */
@@ -117,6 +123,12 @@ export async function addFolder(startIn) {
 }
 
 export async function removeFolder(id) {
+  const gone = roots.find((r) => r.id === id);
+  if (gone?.helper) {   // a folder reached through Grante Helper: just stop using it
+    const set = helperSettings();
+    set.folders = roots.filter((r) => r.helper && r.id !== id).map((r) => r.name);
+    saveHelperSettings(set);
+  }
   roots = roots.filter((r) => r.id !== id);
   try { await dbDelete(id); } catch { /* fine */ }
   keepOut = keepOut.filter((k) => roots.some((r) => k.toLowerCase().startsWith(r.name.toLowerCase() + "/")));
@@ -178,10 +190,23 @@ const PLACES = { downloads: ["Downloads", "downloads"], desktop: ["Desktop", "de
   pictures: ["Pictures", "pictures"], music: ["Music", "music"], movies: ["Movies", "videos"], videos: ["Videos", "videos"] };
 const placeOf = (word) => PLACES[String(word || "").toLowerCase()] || null;
 const isRootName = (word) => roots.some((r) => r.name.toLowerCase() === String(word || "").toLowerCase());
-/* "Desktop/Projects/a.txt" becomes "Projects/a.txt" when Projects was shared but Desktop itself can't be. */
+/* "Downloads" can't be shared whole, so when someone picks a folder inside it to stand in for it,
+   Grante remembers: "Downloads" then means that folder (like "Grante"). Saved per account in this browser. */
+const aliasKey = () => `grante.aliases.${uid}`;
+function aliases() { try { return JSON.parse(localStorage.getItem(aliasKey())) || {}; } catch { return {}; } }
+export function aliasFor(place) { const a = aliases()[String(place).toLowerCase()]; return a && isRootName(a) ? a : null; }
+export function setAlias(place, rootName) {
+  const all = aliases(); all[String(place).toLowerCase()] = rootName;
+  try { localStorage.setItem(aliasKey(), JSON.stringify(all)); } catch { /* fine */ }
+}
+/* "Desktop/Projects/a.txt" becomes "Projects/a.txt" when Projects was shared but Desktop itself can't be.
+   "Downloads/x" becomes "Grante/x" when Grante stands in for Downloads. */
 const clean = (p) => {
   const c = cleanRaw(p), parts = c.split("/");
-  return parts.length > 1 && placeOf(parts[0]) && !isRootName(parts[0]) ? parts.slice(1).join("/") : c;
+  if (!placeOf(parts[0]) || isRootName(parts[0])) return c;
+  const alias = aliasFor(parts[0]);
+  if (alias && (parts.length === 1 || !isRootName(parts[1]))) return [alias, ...parts.slice(1)].join("/");
+  return parts.length > 1 ? parts.slice(1).join("/") : c;
 };
 const isTop = (p) => ["", "."].includes(clean(p));
 const hidden = (name) => name.startsWith(".");
@@ -311,6 +336,7 @@ function checkCanChange(entry) {
 /* Move (or rename) a file or folder. Browsers can't always move directly, so if needed it
    copies first and only removes the original once the copy is complete. */
 async function moveEntry(entry, destDir, newName) {
+  if (entry.handle.remote) return entry.handle.move(destDir, newName);   // Grante Helper moves it on the computer
   if (entry.handle.move && !TEST.noMove) {
     try { await entry.handle.move(destDir, newName); return; }
     catch (e) { if (!["NotSupportedError", "TypeError", "InvalidModificationError", "NotAllowedError"].includes(e?.name)) throw e; }
@@ -450,7 +476,7 @@ async function sortFiles(folder = ".") {
     moved.push(`${n} -> ${category}`);
   }
   if (!moved.length) return "There were no loose files to sort.";
-  return `Sorted ${moved.length} files in '${e.path}':\n${moved.join("\n")}` + (skipped ? `\n(Skipped ${skipped} because a file with the same name was already there.)` : "");
+  return `Sorted ${moved.length} file${moved.length === 1 ? "" : "s"} in '${e.path}':\n${moved.join("\n")}` + (skipped ? `\n(Skipped ${skipped} because a file with the same name was already there.)` : "");
 }
 
 async function openApp() {
@@ -528,6 +554,15 @@ const IS_FOLDER = new Set(["list_files.folder", "sort_files.folder", "create_fol
 
 /* If this action needs a folder Grante hasn't been given yet, what to ask for. Otherwise null.
    said = the person's request (to guess where the folder is), skip = keys already asked about. */
+const DOWNLOADS_TIP = " Tip: in Chrome, go to Settings \u2192 Downloads \u2192 Location \u2192 Change, and pick that same folder. New downloads then land where Grante can sort them.";
+function looseMessage(item, place) {
+  const mine = roots.map((r) => r.name);
+  return `'${item}' is sitting loose in your ${place} folder, and Chrome doesn't let websites see files there, only inside folders you share. `
+    + (mine.length ? `In Finder, drag it into ${mine.length === 1 ? `your ${mine[0]} folder` : `one of your Grante folders (${mine.join(", ")})`}, then ask me again.`
+      : `In Finder, make a folder inside ${place} (like "Grante"), drag it in, then ask me again and share that folder.`)
+    + (place === "Downloads" ? DOWNLOADS_TIP : "");
+}
+
 export async function missingFolder(name, args = {}, said = "", skip = new Set()) {
   if (!FOLDER_ARGS[name]) return null;
   const mentioned = Object.keys(PLACES).find((k) => new RegExp(`\\b${k}\\b`, "i").test(said));
@@ -553,11 +588,25 @@ export async function missingFolder(name, args = {}, said = "", skip = new Set()
     if (place) {
       const rest = parts.slice(1);
       if (rest.length && isRootName(rest[0])) continue;       // "Desktop/Projects" and Projects is shared
-      if (!rest.length || (rest.length === 1 && !IS_FOLDER.has(id))) {
-        // The whole Desktop (or a loose file right in it): Chrome won't allow that
-        return ask(`whole:${place[0]}`, { folder: null, place: place[0], start_in: place[1],
-          message: `Chrome doesn't let websites use your whole ${place[0]} folder. Pick a folder inside ${place[0]} for Grante to use.`
-            + (rest.length ? ` If '${rest[0]}' is loose in ${place[0]}, move it into a folder first.` : "") });
+      if (helper.active && guardedPlace(place[0])) {
+        return { key: `helper:${place[0]}`, cannot: true, message: `Grante isn't set up to use your ${place[0]} folder. `
+          + `To add it, open Account Settings \u2192 Grante Helper \u2192 Change folders.` };
+      }
+      const alias = aliasFor(place[0]);
+      if (alias) {                                            // a folder already stands in for this place
+        if (!rest.length || IS_FOLDER.has(id)) continue;
+        if (await resolve(`${alias}/${rest.join("/")}`)) continue;
+      }
+      if (rest.length === 1 && !IS_FOLDER.has(id)) {
+        // A file sitting loose in Downloads (or Desktop...): Chrome won't let a website see it at all
+        return { key: `loose:${value}`, cannot: true, message: looseMessage(rest[0], place[0]) };
+      }
+      if (!rest.length) {
+        // The whole Downloads (or Desktop...): pick a folder inside it to use instead
+        return ask(`whole:${place[0]}`, { folder: null, place: place[0], start_in: place[1], whole: true, arg, rest: [],
+          message: `Chrome doesn't let websites use your whole ${place[0]} folder, only folders inside it. `
+            + `Pick the folder inside ${place[0]} that Grante should use${name === "create_folder" ? " for this" : ""}.`
+            + (place[0] === "Downloads" ? DOWNLOADS_TIP : "") });
       }
       const folder = rest[0];
       return ask(`folder:${folder.toLowerCase()}`, { folder, place: place[0], start_in: place[1],
@@ -571,11 +620,15 @@ export async function missingFolder(name, args = {}, said = "", skip = new Set()
     }
     if (found) continue;
     const folder = IS_FOLDER.has(id) || parts.length > 1 ? parts[0] : null;
-    return ask(folder ? `folder:${folder.toLowerCase()}` : `item:${String(value).toLowerCase()}`, { folder, place: guess?.[0] || null,
-      start_in: guess?.[1] || "desktop",
-      message: folder ? `Grante needs your permission to use the '${folder}' folder.`
-        : roots.length ? `I can't find '${value}' in the folders you've shared. Give Grante the folder it's in.`
-          : `Give Grante the folder that '${value}' is in.` });
+    if (folder) {
+      return ask(`folder:${folder.toLowerCase()}`, { folder, place: guess?.[0] || null, start_in: guess?.[1] || "desktop",
+        message: `Grante needs your permission to use the '${folder}' folder.` });
+    }
+    const where = guess ? guess[0] : "Downloads, Desktop, or Documents";
+    return ask(`item:${String(value).toLowerCase()}`, { folder: null, place: guess?.[0] || null, start_in: guess?.[1] || "downloads",
+      message: `I can't find '${value}' in ${roots.length ? "the folders you've shared" : "any folder yet"}. If it's inside a folder in ${where}, `
+        + `click Choose and pick that folder. If it's sitting loose in ${where} itself, Chrome won't let me see it: `
+        + `drag it into one of your Grante folders in Finder, then ask again.` });
   }
   return null;
 }
@@ -695,3 +748,117 @@ function firstJson(text) {
 }
 
 export const shared = () => roots.map((r) => r.name);
+
+/* ---------------------------------------------------------------------------------------
+   Grante Helper (Macs): a tiny program on the person's own computer that reaches their real
+   folders, which Chrome won't let a website do. Its folders then work just like picked ones.
+   --------------------------------------------------------------------------------------- */
+export const HELPER_URL = TEST.helperUrl || "http://127.0.0.1:47823";
+export const INSTALL_LINE = "curl -fsSL https://grante-ai.github.io/install.sh | bash";
+export const UNINSTALL_LINE = "curl -fsSL https://grante-ai.github.io/uninstall.sh | bash";
+export const onMac = typeof navigator !== "undefined" && (/Mac/.test(navigator.platform || "") || /Macintosh/.test(navigator.userAgent || "")) && !/\bCrOS\b/.test(navigator.userAgent || "");
+const helper = { active: false, down: false };
+export const helperStatus = () => ({ ...helper, setUp: !!helperSettings().key });
+const helperKey = () => `grante.helper.${uid}`;
+export function helperSettings() { try { return JSON.parse(localStorage.getItem(helperKey())) || {}; } catch { return {}; } }
+export function saveHelperSettings(set) { try { localStorage.setItem(helperKey(), JSON.stringify(set)); } catch { /* fine */ } }
+export function forgetHelper() { try { localStorage.removeItem(helperKey()); } catch { /* fine */ } return refresh(); }
+const guardedPlace = (name) => ["desktop", "documents", "downloads", "pictures", "music", "movies"].includes(String(name).toLowerCase());
+
+class HelperError extends ToolError {
+  constructor(message, code, status) { super(message); this.code = code; this.status = status; }
+}
+
+async function helperFetch(path, { method = "GET", body, timeout = 8000, key = helperSettings().key } = {}) {
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), timeout);
+  let res;
+  try {
+    res = await fetch(HELPER_URL + path, { method, signal: stop.signal, cache: "no-store",
+      headers: { ...(key ? { Authorization: `Bearer ${key}` } : {}), ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined });
+  } catch {
+    helper.down = true;
+    throw new HelperError("Grante Helper isn't answering. It usually starts by itself, so try restarting your Mac.", "down", 0);
+  } finally { clearTimeout(timer); }
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) return data;
+  if (res.status === 404 && data.code === "missing") { const e = new DOMException(data.error || "Not found", "NotFoundError"); throw e; }
+  if (data.code === "not_allowed") throw new HelperError("Your Mac hasn't let Grante into that folder yet. Open Account Settings → Grante Helper → Give access.", "not_allowed", res.status);
+  throw new HelperError(data.error || "Grante Helper couldn't do that.", data.code || "failed", res.status);
+}
+
+/* Is Grante Helper running on this computer? Returns its details, or null. Quick: never waits long. */
+export async function findHelper() {
+  try { return await helperFetch("/hello", { timeout: 1500, key: null }); } catch { return null; }
+}
+/* Connect this browser (and account) to the helper. */
+export async function pairHelper() {
+  const { key } = await helperFetch("/pair", { method: "POST", key: null });
+  saveHelperSettings({ ...helperSettings(), key });
+  return key;
+}
+/* The folders in the person's home folder, like Desktop, Documents, Downloads, Pictures. */
+export async function helperFolders() { return (await helperFetch("/folders")).folders || []; }
+/* Opening each folder once makes the Mac ask "Allow access?". Can take a while: the person is clicking. */
+export async function helperAccess(names) { return (await helperFetch("/access", { method: "POST", body: { folders: names }, timeout: 180000 })).result || {}; }
+/* Sub-folders a level or two down, for suggestions like "Documents/Private". */
+export async function helperSuggestions(names, limit = 200) {
+  const out = [];
+  for (const name of names) {
+    out.push(name);
+    try {
+      const { entries } = await helperFetch(`/list?path=${encodeURIComponent(name)}`);
+      for (const e of entries) if (e.kind === "directory" && !e.name.startsWith(".")) { out.push(`${name}/${e.name}`); if (out.length >= limit) return out; }
+    } catch { /* not allowed yet: skip */ }
+  }
+  return out;
+}
+
+async function helperRoots() {
+  helper.active = false; helper.down = false;
+  const set = helperSettings();
+  if (!set.key || !set.setup) return [];
+  let names;
+  try {
+    const all = (await helperFolders()).map((f) => f.name);
+    names = set.folders === "all" || !Array.isArray(set.folders) ? all : all.filter((n) => set.folders.some((c) => c.toLowerCase() === n.toLowerCase()));
+  } catch (e) {
+    if (e.status === 401) saveHelperSettings({ ...set, key: null, setup: false });   // the helper was reinstalled: connect again
+    return [];
+  }
+  helper.active = true;
+  return names.map((name) => ({ id: `helper:${name}`, uid, name, handle: new HelperDir(name), helper: true, added: 0 }));
+}
+
+/* Stand-ins for the browser's folder and file handles, backed by Grante Helper. They speak the
+   same language, so everything else in this file works on them unchanged. */
+class HelperDir {
+  constructor(path) { this.kind = "directory"; this.path = path; this.name = path.split("/").pop(); this.remote = true; }
+  async *entries() {
+    const { entries } = await helperFetch(`/list?path=${encodeURIComponent(this.path)}`);
+    for (const e of entries) yield [e.name, e.kind === "directory" ? new HelperDir(`${this.path}/${e.name}`) : new HelperFile(`${this.path}/${e.name}`)];
+  }
+  async getDirectoryHandle(name, { create = false } = {}) {
+    const path = `${this.path}/${name}`;
+    if (create) await helperFetch("/mkdir", { method: "POST", body: { path } });
+    else if ((await helperFetch(`/stat?path=${encodeURIComponent(path)}`)).kind !== "directory") throw new DOMException("Not a folder", "TypeMismatchError");
+    return new HelperDir(path);
+  }
+  async getFileHandle() { throw new ToolError("Grante Helper doesn't write files."); }
+  async removeEntry() { throw new ToolError("Grante never deletes anything for good. Deleted things go to Grante Trash."); }
+  async isSameEntry(other) { return !!other?.remote && other.path.toLowerCase() === this.path.toLowerCase(); }
+  async queryPermission() { return "granted"; }
+  async requestPermission() { return "granted"; }
+  async move(destDir, newName) {
+    if (!destDir?.remote) throw new ToolError("Grante can't move things between a Grante Helper folder and a picked folder.");
+    await helperFetch("/move", { method: "POST", body: { from: this.path, to: `${destDir.path}/${newName}` } });
+  }
+}
+class HelperFile {
+  constructor(path) { this.kind = "file"; this.path = path; this.name = path.split("/").pop(); this.remote = true; }
+  async getFile() { return { size: (await helperFetch(`/stat?path=${encodeURIComponent(this.path)}`)).size || 0 }; }
+  async isSameEntry(other) { return !!other?.remote && other.path.toLowerCase() === this.path.toLowerCase(); }
+  async queryPermission() { return "granted"; }
+  move(destDir, newName) { return HelperDir.prototype.move.call(this, destDir, newName); }
+}

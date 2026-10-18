@@ -576,3 +576,83 @@ input.code-single { text-align: center; font-size: 24px; letter-spacing: .4em; }
 .keepout-add input { flex: 1; min-width: 0; }
 .perm-strip { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--purple-soft); }
 .perm-strip .icon { width: 16px; height: 16px; vertical-align: -3px; color: var(--purple); }
+
+/* Grante's reply appearing as it's written */
+.prose.typing { white-space: pre-wrap; }
+.prose.typing::after { content: ""; display: inline-block; width: .5em; height: 1.05em; margin-left: 2px; vertical-align: -0.15em;
+  background: var(--purple); border-radius: 2px; animation: caret 1s steps(1) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .prose.typing::after { animation: none; } }
+
+/* "Grante needs a home": the one-time Downloads setup card */
+.home-card { position: relative; overflow: hidden; flex-shrink: 0; border: 1.5px solid var(--purple-line);
+  background: linear-gradient(135deg, rgba(255, 255, 255, .95), var(--purple-soft));
+  animation: homeIn .7s cubic-bezier(.2, .8, .2, 1) both; }
+.home-card h3 { margin: 0 0 6px; font-size: 20px; }
+.home-card p { margin: 6px 0; line-height: 1.5; }
+.home-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 14px 0 6px; }
+.home-steps { color: var(--ink); font-size: 15px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.step-dot { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--purple); color: #fff; font-size: 12px; margin-right: 4px; }
+.home-tip { color: var(--muted); font-size: 14px; }
+.home-card.celebrate { animation: homePop .5s cubic-bezier(.2, .8, .2, 1.4) both; }
+.home-card.leaving { animation: homeOut .35s ease forwards; }
+@keyframes homeIn { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes homePop { 0% { transform: scale(.97); } 60% { transform: scale(1.015); } 100% { transform: none; } }
+@keyframes homeOut { to { opacity: 0; transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .home-card, .home-card.celebrate, .home-card.leaving { animation: none; } }
+
+/* Grante Helper setup: steps and questions */
+.helper-card.step-in > * { animation: stepIn .45s cubic-bezier(.2, .8, .2, 1) both; }
+.helper-card.step-in > *:nth-child(2) { animation-delay: .05s; }
+.helper-card.step-in > *:nth-child(3) { animation-delay: .1s; }
+.helper-card.step-in > *:nth-child(n+4) { animation-delay: .15s; }
+@keyframes stepIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.unlock-steps { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 12px; }
+.unlock-steps li { display: flex; gap: 10px; align-items: flex-start; line-height: 1.7; }
+.unlock-steps .step-dot { flex: none; margin-top: 3px; }
+kbd { display: inline-block; min-width: 1.6em; padding: 1px 7px; border-radius: 7px; border: 1px solid var(--purple-line);
+  border-bottom-width: 3px; background: #fff; font: inherit; font-size: 13px; text-align: center; line-height: 1.5; }
+.code-line { display: flex; align-items: center; gap: 10px; margin-top: 6px; padding: 8px 8px 8px 14px; border-radius: 12px;
+  background: #1f2240; color: #fff; max-width: 100%; }
+.code-line code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-size: 13.5px; font-family: ui-monospace, Menlo, monospace; }
+.code-line .btn.copied { background: #1aa260; }
+.waiting { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; margin: 6px 0; }
+.pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--purple); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { transform: scale(.7); opacity: .5; } 50% { transform: scale(1.1); opacity: 1; } }
+.q-progress { display: flex; gap: 6px; margin-bottom: 10px; }
+.q-progress span { width: 26px; height: 5px; border-radius: 3px; background: var(--purple-line); }
+.q-progress span.on { background: var(--purple); }
+.q-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 14px 0 6px; }
+.q-option { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 14px 16px; border-radius: 14px; cursor: pointer;
+  border: 1.5px solid var(--purple-line); background: #fff; font: inherit; color: var(--ink); transition: transform .12s, box-shadow .12s; }
+.q-option strong { font-size: 16px; }
+.q-option span { color: var(--muted); font-size: 13.5px; font-weight: 400; }
+.q-option:hover, .q-option:focus-visible { transform: translateY(-2px); box-shadow: 0 0 18px rgba(157, 0, 255, .25); outline: none; }
+.q-option.best { border-color: var(--purple); background: var(--purple-soft); }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin: 10px 0; }
+.pick { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: #fff; border: 1px solid var(--line); cursor: pointer; }
+.allow-list { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 8px; }
+.allow-list li { display: flex; align-items: center; gap: 10px; }
+.allow-list .dot-icon { color: var(--purple); display: inline-flex; }
+.allow-list li.ok .dot-icon { color: #1aa260; }
+.allow-list li.no .dot-icon { color: #d33; }
+@media (prefers-reduced-motion: reduce) { .helper-card.step-in > *, .pulse { animation: none; } }
+
+/* The full-screen folder setup, shown once before the app on a Mac */
+.setup-screen { min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; background: var(--bg); }
+.setup-inner { width: 100%; max-width: 680px; animation: homeIn .7s cubic-bezier(.2, .8, .2, 1) both; }
+.setup-brand { display: flex; align-items: center; gap: 12px; }
+.setup-brand h1 { margin: 0; font-size: clamp(26px, 4vw, 34px); line-height: 1.2; }
+.setup-wave { font-size: 34px; display: inline-block; transform-origin: 70% 70%; animation: wave 1.6s ease-in-out .6s 2; }
+@keyframes wave { 0%, 100% { transform: rotate(0); } 20%, 60% { transform: rotate(16deg); } 40%, 80% { transform: rotate(-8deg); } }
+.setup-sub { color: var(--muted); font-size: 17px; margin: 8px 0 18px; }
+.home-card.setup-big { padding: 28px 30px; font-size: 16.5px; }
+.home-card.setup-big h3 { font-size: 23px; }
+@media (prefers-reduced-motion: reduce) { .setup-inner, .setup-wave { animation: none; } }
+
+/* Words fading in, one after another */
+.word-in { display: inline; opacity: 0; animation: wordIn .45s ease forwards; }
+@keyframes wordIn { from { opacity: 0; filter: blur(2px); } to { opacity: 1; filter: none; } }
+.prose.typing::after { animation: caret 1s steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) { .word-in { animation: none; opacity: 1; } }

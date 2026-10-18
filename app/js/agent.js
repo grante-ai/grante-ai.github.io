@@ -1,9 +1,10 @@
 /* Home screen and the Grante agent (the part that does things with your files). */
 import { api, FILES, WEB } from "./api.js";
-import { permissionStrip } from "./folders-ui.js";
+import { homeCard, permissionStrip } from "./folders-ui.js";
+import { helperCard } from "./helper-ui.js";
 import { USES } from "./content.js";
 import { app } from "./state.js";
-import { formatDate, h, icon, markdown, thinking, toast } from "./ui.js";
+import { fadeInWords, formatDate, h, icon, markdown, thinking, toast } from "./ui.js";
 
 export const KIND_TAGS = {
   move_file: "Moved", rename_file: "Renamed", create_folder: "New folder",
@@ -125,7 +126,7 @@ function resultBubble(r, shown, showTree) {
   const actions = r.actions.slice(shown);
   if (!actions.length && !r.reply && !(showTree && r.tree)) return;
   const body = h("div", {});
-  if (r.reply) body.append(markdown(r.reply));
+  if (r.reply) body.append(fadeInWords(markdown(r.reply)));
   if (actions.length) body.append(h("div", { class: "actions" }, ...actions.map((a) =>
     h("div", { class: `action ${a.success ? "ok" : "no"}` }, h("span", { class: "dot-icon" }, icon(a.success ? "check" : "x")), h("span", {}, a.result)))));
   if (showTree && r.tree) body.append(folderPreview(r.tree));
@@ -161,11 +162,11 @@ function askFolder(need) {
     bubble("grante", h("div", {},
       h("div", { class: "approval-head" }, icon("folder"), "Grante needs a folder"),
       h("p", { class: "approval-q" }, need.message), hint, buttons), "approval");
-    const done = (granted, label) => { buttons.replaceWith(h("p", { class: "muted small" }, label)); hint.remove(); resolve(granted); };
+    const done = (granted, label, name = null) => { buttons.replaceWith(h("p", { class: "muted small" }, label)); hint.remove(); resolve({ granted, name }); };
     pick.addEventListener("click", async () => {
       try {
         const r = await FILES.addFolder(need.start_in);
-        if (r) done(true, r.already ? `${r.name} was already shared.` : `You shared ${r.name}.`);
+        if (r) done(true, r.already ? `${r.name} was already shared.` : `You shared ${r.name}.`, r.name);
       } catch (e) { toast(e.message, "bad"); }
     });
     cancel.addEventListener("click", () => done(false, "You cancelled this."));
@@ -222,9 +223,9 @@ async function send(text, form) {
       resultBubble({ ...r, reply: null }, shown, false);
       shown = r.actions.length;
       if (r.status === "needs_folder") {
-        const granted = await askFolder(r.need_folder);
+        const picked = await askFolder(r.need_folder);
         wait = bubble("grante", thinking());
-        r = await api(`/agent/${app.agentSession}/folder`, { method: "POST", body: { granted } });
+        r = await api(`/agent/${app.agentSession}/folder`, { method: "POST", body: picked });
       } else if (r.status === "needs_choice") {
         const index = await askChoice(r.choice);
         wait = bubble("grante", thinking());
@@ -290,6 +291,10 @@ export function renderAgent(view) {
       h("div", { class: "chips" }, h("a", { class: "btn", href: "#/chat" }, "Ask Grante AI"), h("a", { class: "btn btn-ghost", href: "#/forum" }, "Open the forum")))));
   }
   if (!thread) thread = h("div", { class: "thread" }, welcomeCard());
+  if (WEB && !thread.querySelector(".home-card")) {   // one-time setup: Grante Helper on Macs, or a Grante folder
+    const folderCard = () => { if (!thread.querySelector(".home-card")) thread.prepend(homeCard(app.user.username)); };
+    thread.prepend(FILES.onMac ? helperCard({ onFolder: folderCard, onReady: () => renderAgent(view) }) : homeCard(app.user.username));
+  }
   const input = h("input", { type: "text", autocomplete: "off", placeholder: "Tell Grante what to do…", "aria-label": "Tell Grante what to do" });
   const form = h("form", { class: "card composer" }, input, h("button", { class: "btn", type: "submit" }, "Send"));
   form.addEventListener("submit", async (e) => {

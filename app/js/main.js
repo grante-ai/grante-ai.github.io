@@ -4,6 +4,7 @@ import { renderAgent, renderHome, resetAgent } from "./agent.js";
 import { api, events, WEB } from "./api.js";
 import { renderForgot, renderLegal, renderSignIn, renderSignUp, renderVerify, renderWelcome } from "./auth.js";
 import { renderChat } from "./chat.js";
+import { needsSetupScreen, renderSetupScreen } from "./helper-ui.js";
 import { renderForum, renderPost } from "./forum.js";
 import { app } from "./state.js";
 import { $, h, icon, initials, logo, toast } from "./ui.js";
@@ -13,6 +14,8 @@ const PUBLIC = ["welcome", "signin", "signup", "forgot", "terms", "privacy"];
 let usersExist = true;
 let signingUp = false;   // true while the create-account screens are open
 let shell = null;
+let setupChecked = false;   // the "let Grante into your folders" screen is checked once per visit
+let inSetup = false;        // true while that screen is up
 
 const NAV = [
   ["home", "Home", "home"],
@@ -74,6 +77,7 @@ async function signOut() {
 }
 
 function signedOut() {
+  setupChecked = false; inSetup = false;
   signingUp = false;
   app.user = null; app.agentSession = null; app.chatId = null;
   resetAgent();
@@ -126,6 +130,20 @@ function route() {
     return renderVerify(root, { user: app.user, onVerified: signedIn, onSignOut: signOut });
   }
   if (["welcome", "signin", "signup", "forgot"].includes(page)) { location.replace("#/home"); return route(); }
+  if (WEB && page === "setup") {   // opened from Account Settings: the folder setup, full screen
+    shell = null; setupChecked = true; inSetup = true;
+    return renderSetupScreen(root, () => { inSetup = false; location.hash = "#/agent"; });
+  }
+  if (inSetup) return;   // the setup screen (or the check for it) is showing: page changes wait
+  if (WEB && !setupChecked && !signingUp) {   // first stop on a Mac: the folder setup screen, before anything else
+    setupChecked = true; inSetup = true;
+    const leave = () => { inSetup = false; route(); };
+    return needsSetupScreen().then((show) => {
+      if (!show) return leave();
+      shell = null;
+      renderSetupScreen(root, () => { inSetup = false; if (location.hash === "#/agent") route(); else location.hash = "#/agent"; });
+    }).catch(leave);
+  }
   if (!shell) { shell = buildShell(); root.replaceChildren(shell.frame); }
   shell.paintUser();
   const view = shell.view;
