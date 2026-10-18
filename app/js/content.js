@@ -10,7 +10,7 @@ export const FOUNDER = {
   name: "Tango Bhat",
   title: "Founder, NarSan",
   photo: "",            // leave empty to show your initials, or put a picture in static/img and write its name here
-  bio: ``,
+  bio: `Just a 13 year old who built an app.`,
 };
 
 /* ---- What people use Grante for ------------------------------------------------
